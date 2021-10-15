@@ -31,4 +31,4 @@ jobs:
         with:
           service: bucket-proxy
           image: gcr.io/ax6-project/bucket-proxy
-          credentials: ${{ secrets.GCP_SA_KEY }}
+          credentials: ${{ env.GCP_SA_KEY }}
