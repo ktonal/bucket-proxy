@@ -2,29 +2,51 @@ import io
 from typing import Optional
 import os
 import json
-import secrets
-from fastapi import FastAPI, Depends, HTTPException, status, Header
+
 from google.cloud import storage
+from google.oauth2 import id_token
+from google.auth.transport import requests
+
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from starlette.responses import StreamingResponse
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+origins = [
+    "http://192.168.0.26:3000",
+    "http://localhost:3000"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    # allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 storage_client = storage.Client("ax6-Project")
 GCP_BUCKET = os.environ.get("GCP_BUCKET", "ax6-train-data")
 bucket = storage_client.bucket(GCP_BUCKET)
 
 
-def check_token(authorization: str = Header(...)):
-    correct_password = secrets.compare_digest(authorization, "Bearer " + os.environ.get("APP_SECRET", ""))
-    if not correct_password:
+def check_token(authorization: Optional[str] = Header(None)):
+    user_id_token = authorization.split(" ")[-1]
+    try:
+        # Specify the CLIENT_ID of the app that accesses the backend:
+        idinfo = id_token.verify_oauth2_token(user_id_token, requests.Request(),
+                                              "955131018414-f46kce80kqakmpofouoief34050ni8e0.apps.googleusercontent.com")
+
+        # ID token is valid. Get the user's Google Account ID from the decoded token.
+        user_id = idinfo['sub']
+        return user_id
+    except ValueError:
+        # Invalid token
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail="Unauthorized",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return correct_password
 
 
 @app.get(
@@ -40,7 +62,10 @@ def list_all_blobs(
                       if content_type is None or content_type in blob.content_type]}
 
 
-@app.get("/table/")
+@app.get(
+    "/table/",
+    dependencies=[Depends(check_token)]
+)
 def get_table():
     # each json in the bucket is a row
     table = {}
@@ -54,7 +79,10 @@ def get_table():
     return table
 
 
-@app.get("/bytes/{blob_path:path}")
+@app.get(
+    "/bytes/{blob_path:path}",
+    dependencies=[Depends(check_token)]
+)
 def stream_bytes(blob_path: str):
     blob = bucket.blob(blob_path)
     raw = blob.download_as_bytes()
