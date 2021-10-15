@@ -33,3 +33,4 @@ jobs:
           project_id: ax6-project
           image: gcr.io/ax6-project/bucket-proxy
           credentials: ${{ secrets.GCP_SA_KEY }}
+          env_vars: PORT=80
