@@ -30,5 +30,6 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@main
         with:
           service: bucket-proxy
+          project_id: ax6-project
           image: gcr.io/ax6-project/bucket-proxy
           credentials: ${{ env.GCP_SA_KEY }}
