@@ -2,17 +2,19 @@ import io
 from typing import Optional
 import os
 import json
+import re
 
 from google.cloud import storage
 from google.oauth2 import id_token
 from google.auth.transport import requests
 
 from fastapi import FastAPI, Depends, HTTPException, status, Header
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 origins = [
+    os.environ.get("AXX_CLIENT_URL", "https://confident-mestorf-42e03b.netlify.app"),
     "http://192.168.0.26:3000",
     "http://localhost:3000"
 ]
@@ -29,10 +31,12 @@ storage_client = storage.Client("ax6-Project")
 GCP_BUCKET = os.environ.get("GCP_BUCKET", "ax6-train-data")
 bucket = storage_client.bucket(GCP_BUCKET)
 
+AUDIOS_REGEX = re.compile(r"wav$|aif$|aiff$|mp3$|mp4$|m4a$", re.IGNORECASE)
+
 
 def check_token(authorization: Optional[str] = Header(None)):
-    user_id_token = authorization.split(" ")[-1]
     try:
+        user_id_token = authorization.split(" ")[-1]
         # Specify the CLIENT_ID of the app that accesses the backend:
         idinfo = id_token.verify_oauth2_token(user_id_token, requests.Request(),
                                               "955131018414-f46kce80kqakmpofouoief34050ni8e0.apps.googleusercontent.com")
@@ -40,7 +44,7 @@ def check_token(authorization: Optional[str] = Header(None)):
         # ID token is valid. Get the user's Google Account ID from the decoded token.
         user_id = idinfo['sub']
         return user_id
-    except ValueError:
+    except (ValueError, AttributeError):
         # Invalid token
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -74,8 +78,9 @@ def get_table():
             dirname = os.path.dirname(blob.name)
             if blob.content_type == "application/json":
                 table.setdefault(dirname, {}).setdefault("json", json.loads(blob.download_as_string()))
-            elif "audio" in blob.content_type:
-                table.setdefault(dirname, {}).setdefault("audios", []).append(blob.name)
+                for sub_blob in storage_client.list_blobs(bucket, prefix=dirname):
+                    if "audio" in sub_blob.content_type or re.search(AUDIOS_REGEX, os.path.splitext(sub_blob.name)[1]):
+                        table.setdefault(dirname, {}).setdefault("audios", []).append(sub_blob.name)
     return table
 
 
