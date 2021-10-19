@@ -2,3 +2,4 @@ fastapi==0.70
 google-cloud-storage==1.42.3
 pydantic
 uvicorn
+python-multipart
