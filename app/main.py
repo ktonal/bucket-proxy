@@ -1,8 +1,7 @@
 import io
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, AnyStr, Any
 import os
 import json
-import re
 from uuid import uuid4
 
 from google.cloud import storage
@@ -15,10 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 storage_client = storage.Client("ax6-Project")
-GCP_BUCKET = os.environ.get("GCP_BUCKET", "ax6-train-data")
+GCP_BUCKET = os.environ.get("GCP_BUCKET", "axx-data")
 bucket = storage_client.bucket(GCP_BUCKET)
-
-AUDIOS_REGEX = re.compile(r"wav$|aif$|aiff$|mp3$|mp4$|m4a$", re.IGNORECASE)
 
 
 def check_token(authorization: Optional[str] = Header(None)):
@@ -31,7 +28,8 @@ def check_token(authorization: Optional[str] = Header(None)):
         # ID token is valid. Get the user's Google Account ID from the decoded token.
         user_id = idinfo['sub']
         return user_id
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError) as e:
+        print(e)
         # Invalid token
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,24 +68,20 @@ def list_all_blobs(
 #                TABLE ROUTES
 ####################################################
 
+
 @app.get("/table/")
-def discover_table():
-    # each json in the bucket is a row
-    table = {}
-    for blob in storage_client.list_blobs(bucket):
-        if "text" not in blob.content_type:
-            dirname = os.path.dirname(blob.name)
-            if blob.content_type == "application/json":
-                table.setdefault(dirname, {}).setdefault("json", json.loads(blob.download_as_string()))
-                for sub_blob in storage_client.list_blobs(bucket, prefix=dirname):
-                    if "audio" in sub_blob.content_type or re.search(AUDIOS_REGEX, os.path.splitext(sub_blob.name)[1]):
-                        table.setdefault(dirname, {}).setdefault("audios", []).append(sub_blob.name)
-    return table
+def list_tables():
+    storage_path = "tables/"
+    tables = storage_client.list_blobs(bucket, prefix=storage_path, delimiter='/',
+                                       include_trailing_delimiter=True)
+    resp = [os.path.split(os.path.dirname(table.name))[1]
+            for table in tables if table.name != storage_path]
+    return resp
 
 
 @app.post("/table/")
 def create_table(table_id: str = Body(...)):
-    view_path = f"table/{table_id}/views/default.json"
+    view_path = f"tables/{table_id}/views/default.json"
     collections_path = f"table/{table_id}/collections"
     bucket.blob(view_path).upload_from_string(json.dumps(View()))
     bucket.blob(collections_path).upload_from_string('', content_type='application/x-www-form-urlencoded;charset=UTF-8')
@@ -95,11 +89,11 @@ def create_table(table_id: str = Body(...)):
 
 
 @app.get("/table/{table_id}")
-def get_table(table_id: str, view_name: Optional[str]):
-    view_path = f"table/{table_id}/views/{'default' if view_name is None else view_name}.json"
-    collections_path = f"table/{table_id}/collections"
+def get_table(table_id: str, view_name: Optional[str] = "default"):
+    view_path = f"tables/{table_id}/views/{view_name}.json"
+    collections_path = f"tables/{table_id}/collections"
     view = json.loads(bucket.blob(view_path).download_as_string())
-    collections = [json.loads(bucket.blob(coll).download_as_string())
+    collections = [json.loads(bucket.blob(coll.name).download_as_string())
                    for coll in storage_client.list_blobs(bucket, prefix=collections_path)
                    if "json" in coll.content_type]
     return {"view": view, "collections": collections}
@@ -120,7 +114,7 @@ class View(BaseModel):
 
 @app.get("/table/{table_id}/view")
 def list_views(table_id: str):
-    storage_path = f"table/{table_id}/views"
+    storage_path = f"tables/{table_id}/views"
     return [{"id": blob.name, "data": json.loads(blob.download_as_string())}
             for blob in storage_client.list_blobs(bucket, prefix=storage_path)
             if "json" in blob.content_type]
@@ -128,7 +122,7 @@ def list_views(table_id: str):
 
 @app.get("/table/{table_id}/view/{view_name}")
 def get_view(table_id: str, view_name: str):
-    storage_path = f"table/{table_id}/views/{view_name}.json"
+    storage_path = f"tables/{table_id}/views/{view_name}.json"
     return json.loads(bucket.blob(storage_path).download_as_string())
 
 
@@ -141,72 +135,98 @@ def put_view(table_id: str, view: View):
 
 # COLLECTIONS
 
+class Collection(BaseModel):
+    __root__: Dict[str, Any]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class CollectionRequest(BaseModel):
+    collection: Collection
+
+
 @app.get("/table/{table_id}/collections")
 def get_collections(table_id: str):
-    storage_path = f"table/{table_id}/collections"
+    storage_path = f"tables/{table_id}/collections"
     return [json.loads(blob.download_as_string())
             for blob in storage_client.list_blobs(bucket, prefix=storage_path)
             if "json" in blob.content_type]
 
 
 @app.post("/table/{table_id}/collections")
-def create_collection(table_id: str, collection: Dict[str, str]):
+def create_collection(table_id: str, collection: Dict[str, Any] = Body(...)):
     collection_uuid = str(uuid4())
-    storage_path = f"table/{table_id}/collections/{collection_uuid}.json"
+    storage_path = f"tables/{table_id}/collections/{collection_uuid}.json"
+    collection.setdefault("id", collection_uuid)
     collection.setdefault("blobs", [])
-    response = bucket.blob(storage_path).upload_from_string(json.dumps(collection))
-    return response
+    bucket.blob(storage_path).upload_from_string(json.dumps(collection),
+                                                 content_type="application/json")
+    return collection
 
 
 @app.put("/table/{table_id}/collections/{collection_id}")
-def edit_collection(table_id: str, collection_id: str, collection: Dict[str, str]):
-    storage_path = f"table/{table_id}/collections/{collection_id}.json"
-    response = bucket.blob(storage_path).upload_from_string(collection.json())
+def edit_collection(table_id: str, collection_id: str, collection: Dict[str, Any] = Body(...)):
+    storage_path = f"tables/{table_id}/collections/{collection_id}.json"
+    response = bucket.blob(storage_path).upload_from_string(json.dumps(collection),
+                                                            content_type="application/json")
     return response
 
 
 @app.get("/table/{table_id}/collections/{collection_id}")
 def get_collection(table_id: str, collection_id: str):
-    storage_path = f"table/{table_id}/collections/{collection_id}.json"
+    storage_path = f"tables/{table_id}/collections/{collection_id}.json"
     return json.loads(bucket.blob(storage_path).download_from_string())
+
+
+@app.delete("/table/{table_id}/collections/{collection_id}")
+def delete_collection(table_id: str, collection_id: str):
+    storage_path = f"tables/{table_id}/collections/{collection_id}.json"
 
 
 # BLOBS (in Collections)
 
 class Blob(BaseModel):
+    bucket: str
     name: str
-    url: str
+    path: str
+
+    @property
+    def id(self):
+        return f"{self.bucket}/{self.path}"
 
 
 @app.post("/table/{table_id}/collections/{collection_id}/blobs")
 def add_blob(table_id: str, collection_id: str, blob: Blob):
-    storage_path = f"table/{table_id}/collections/{collection_id}.json"
+    storage_path = f"tables/{table_id}/collections/{collection_id}.json"
     collection = json.loads(bucket.blob(storage_path).download_as_string())
     collection["blobs"].append(blob.dict())
-    response = bucket.blob(storage_path).upload_from_string(json.dumps(collection))
-    return response
+    bucket.blob(storage_path).upload_from_string(json.dumps(collection),
+                                                 content_type="application/json")
+    return blob.dict()
 
 
 @app.put("/table/{table_id}/collections/{collection_id}/blobs")
 def edit_blob(table_id: str, collection_id: str, blob: Blob):
-    storage_path = f"table/{table_id}/collections/{collection_id}.json"
+    storage_path = f"tables/{table_id}/collections/{collection_id}.json"
     collection = json.loads(bucket.blob(storage_path).download_as_string())
-    if blob.url not in set([b["url"] for b in collection['blobs']]):
+    if blob.id not in set([b.id for b in collection['blobs']]):
         collection["blobs"].append(blob.dict())
     else:
-        collection["blobs"] = [b for b in collection["blobs"] if b["url"] != blob.url]
+        collection["blobs"] = [b for b in collection["blobs"] if b.id != blob.id]
         collection["blobs"].append(blob)
-    response = bucket.blob(storage_path).upload_from_string(json.dumps(collection))
+    response = bucket.blob(storage_path).upload_from_string(json.dumps(collection),
+                                                            content_type="application/json")
     return response
 
 
-@app.delete("/table/{table_id}/collections/{collection_id}/blobs/{url:path}")
+@app.delete("/table/{table_id}/collections/{collection_id}/blobs")
 def remove_blob_from_collection(
-        table_id: str, collection_id: str, blob_url: str
+        table_id: str, collection_id: str, blob: Blob
 ):
-    storage_path = f"table/{table_id}/collections/{collection_id}.json"
+    storage_path = f"tables/{table_id}/collections/{collection_id}.json"
     collection = json.loads(bucket.blob(storage_path).download_as_string())
-    collection["blobs"] = [b for b in collection["blobs"] if b["url"] != blob_url]
+    collection["blobs"] = [b for b in collection["blobs"] if Blob(**b).id != blob.id]
     response = bucket.blob(storage_path).upload_from_string(json.dumps(collection))
     return response
 
@@ -215,19 +235,42 @@ def remove_blob_from_collection(
 #                BLOB ROUTES
 ####################################################
 
+# because blobs are allowed to be outside of the apps data
+# we instantiate a bucket if need be
+
+def get_bucket(path):
+    prefix = next(part for part in path.split('/') if part)
+    if prefix != GCP_BUCKET:
+        return storage_client.bucket(prefix)
+    return bucket
+
+
 @app.post("/bytes/{blob_path:path}")
-def create_blob(blob_path: str, file: UploadFile = File(...)):
-    response = bucket.blob(blob_path).upload_from_bytes(file.read())
-    return response
+def create_blob(
+        blob_path: str,
+        bucket: Optional[str] = "",
+        file: UploadFile = File(...)):
+    if not blob_path:
+        blob_path = "blobs/"
+    if not bucket:
+        bucket = GCP_BUCKET
+    blob_path += file.filename
+    blob = storage_client.bucket(bucket).blob(blob_path)
+    # TODO: convert (.wav, .aiff, .aif, ...) to .mp3
+    blob.upload_from_string(file.file.read(),
+                            content_type="audio/"+os.path.splitext(file.filename)[1].strip("."))
+    return {"bucket": bucket, "path": blob_path, "name": file.filename}
 
 
 @app.get("/bytes/{blob_path:path}")
-def stream_bytes(blob_path: str):
-    blob = bucket.blob(blob_path)
+def stream_bytes(blob_path: str, bucket: Optional[str] = ''):
+    if not bucket:
+        bucket = GCP_BUCKET
+    blob = storage_client.bucket(bucket).blob(blob_path)
     raw = blob.download_as_bytes()
     return StreamingResponse(io.BytesIO(raw), media_type=blob.content_type)
 
 
 @app.delete("/blob/{blob_path:path}")
 def delete_blob(blob_path: str):
-    return bucket.blob(blob_path).delete()
+    return get_bucket(blob_path).blob(blob_path).delete()
