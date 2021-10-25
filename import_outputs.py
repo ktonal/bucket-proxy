@@ -26,7 +26,7 @@ def flatten_dict(dd, separator='/', prefix=''):
 
 if __name__ == '__main__':
     SRC_BUCKET = "ax6-outputs"
-    SRC_PREFIX = "sounds/raw/wn-small-pol"
+    SRC_PREFIX = "sounds/raw/srnn-small-sig"
     TRG_NAME = "outputs"
 
     src_bucket = storage_client.bucket(SRC_BUCKET)
@@ -52,11 +52,11 @@ if __name__ == '__main__':
 
     trg_bucket = storage_client.bucket("axx-data")
 
-    for id, data in table.items():
-        trg_bucket.blob(f"tables/{TRG_NAME}/collections/{id}.json").upload_from_string(json.dumps(data),
-                                                                                       content_type="application/json")
+    # for id, data in table.items():
+    #     trg_bucket.blob(f"tables/{TRG_NAME}/collections/{id}.json").upload_from_string(json.dumps(data),
+    #                                                                                    content_type="application/json")
 
-    # trg_bucket.blob(f"tables/{TRG_NAME}/views/default.json").upload_from_string(
-    #     json.dumps([{"key": k, "visible": True, "grouped": True} for k in ["files", "network_type", "input_type"]] +
-    #                [{"key": "id", "visible": True, "grouped": False}])
-    # )
+    trg_bucket.blob(f"tables/{TRG_NAME}/views/default.json").upload_from_string(
+        json.dumps([{"key": k, "visible": True, "grouped": True} for k in ["files"]] +
+                   [{"key": k, "visible": True, "grouped": False} for k in ["network_type", "input_type", "id"]])
+    )

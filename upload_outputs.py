@@ -10,10 +10,11 @@ AUDIOS_REGEX = re.compile(r"wav$|aif$|aiff$|mp3$|mp4$|m4a$", re.IGNORECASE)
 
 
 if __name__ == '__main__':
-    TARGET_PREFIX = "sounds/raw/wn-small-pol"
+    files = FileWalker(r"mp3|json", "./")
+    TARGET_PREFIX = "sounds/raw/srnn-small-sig"
 
     to_upload = {f: os.path.join(TARGET_PREFIX, f.strip("./"))
-                 for f in FileWalker(r"mp3|json", "./")}
+                 for f in files}
 
     for i, (src, target) in enumerate(to_upload.items()):
         # if i < 1:
