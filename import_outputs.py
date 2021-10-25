@@ -24,10 +24,18 @@ def flatten_dict(dd, separator='/', prefix=''):
             } if isinstance(dd, dict) else {prefix: dd}
 
 
+def list_audio_blobs(bucket, dirname):
+    return [
+        {"bucket": bucket, "path": sub_blob.name, "name": os.path.split(sub_blob.name)[-1]}
+        for sub_blob in storage_client.list_blobs(storage_client.bucket(bucket), prefix=dirname)
+        if "audio" in sub_blob.content_type or re.search(AUDIOS_REGEX, os.path.splitext(sub_blob.name)[1])
+    ]
+
+
 if __name__ == '__main__':
-    SRC_BUCKET = "ax6-outputs"
-    SRC_PREFIX = "sounds/raw/srnn-small-sig"
-    TRG_NAME = "outputs"
+    SRC_BUCKET = "axx-data"
+    SRC_PREFIX = "blobs/Verdi_Dataset"
+    TRG_NAME = "trainset"
 
     src_bucket = storage_client.bucket(SRC_BUCKET)
     # each json in the bucket is a row
@@ -45,10 +53,7 @@ if __name__ == '__main__':
                 # apply values transform
                 for key, transform in VALUES_TRANSFORMS.items():
                     table[data['id']][key] = transform(table[data['id']][key])
-                for sub_blob in storage_client.list_blobs(src_bucket, prefix=dirname):
-                    if "audio" in sub_blob.content_type or re.search(AUDIOS_REGEX, os.path.splitext(sub_blob.name)[1]):
-                        table.setdefault(data["id"], {}).setdefault("blobs", []).append(
-                            {"bucket": SRC_BUCKET, "path": sub_blob.name, "name": os.path.split(sub_blob.name)[-1]})
+                table.setdefault(data["id"], {}).setdefault("blobs", list_audio_blobs(SRC_BUCKET, dirname))
 
     trg_bucket = storage_client.bucket("axx-data")
 
@@ -56,7 +61,10 @@ if __name__ == '__main__':
     #     trg_bucket.blob(f"tables/{TRG_NAME}/collections/{id}.json").upload_from_string(json.dumps(data),
     #                                                                                    content_type="application/json")
 
-    trg_bucket.blob(f"tables/{TRG_NAME}/views/default.json").upload_from_string(
-        json.dumps([{"key": k, "visible": True, "grouped": True} for k in ["files"]] +
-                   [{"key": k, "visible": True, "grouped": False} for k in ["network_type", "input_type", "id"]])
-    )
+    trg_bucket.blob(f"tables/trainset/collections/")
+
+
+    # trg_bucket.blob(f"tables/{TRG_NAME}/views/default.json").upload_from_string(
+    #     json.dumps([{"key": k, "visible": True, "grouped": True} for k in ["files"]] +
+    #                [{"key": k, "visible": True, "grouped": False} for k in ["network_type", "input_type", "id"]])
+    # )

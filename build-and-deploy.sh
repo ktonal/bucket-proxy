@@ -1,7 +1,9 @@
 #!/bin/bash
 
-docker build -t gcr.io/ax6-project/bucket-proxy .
+set -e
 
-gcloud builds submit --tag gcr.io/ax6-project/bucket-proxy
+docker build -t gcr.io/ax6-project/bucket-proxy:latest .
 
-gcloud run deploy bucket-proxy --image gcr.io/ax6-project/bucket-proxy --region europe-west6
+gcloud builds submit --tag gcr.io/ax6-project/bucket-proxy:latest
+
+gcloud run deploy bucket-proxy --image gcr.io/ax6-project/bucket-proxy:latest --region europe-west4

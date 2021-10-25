@@ -1,5 +1,5 @@
 import io
-from typing import Optional, List, Dict, AnyStr, Any
+from typing import Optional, List, Dict, Any
 import os
 import json
 from uuid import uuid4
@@ -182,6 +182,7 @@ def get_collection(table_id: str, collection_id: str):
 @app.delete("/table/{table_id}/collections/{collection_id}")
 def delete_collection(table_id: str, collection_id: str):
     storage_path = f"tables/{table_id}/collections/{collection_id}.json"
+    return bucket.blob(storage_path).delete()
 
 
 # BLOBS (in Collections)
@@ -238,12 +239,6 @@ def remove_blob_from_collection(
 # because blobs are allowed to be outside of the apps data
 # we instantiate a bucket if need be
 
-def get_bucket(path):
-    prefix = next(part for part in path.split('/') if part)
-    if prefix != GCP_BUCKET:
-        return storage_client.bucket(prefix)
-    return bucket
-
 
 @app.post("/bytes/{blob_path:path}")
 def create_blob(
@@ -264,6 +259,8 @@ def create_blob(
 
 @app.get("/bytes/{blob_path:path}")
 def stream_bytes(blob_path: str, bucket: Optional[str] = ''):
+    if not blob_path:
+        blob_path = "blobs/"
     if not bucket:
         bucket = GCP_BUCKET
     blob = storage_client.bucket(bucket).blob(blob_path)
@@ -272,5 +269,10 @@ def stream_bytes(blob_path: str, bucket: Optional[str] = ''):
 
 
 @app.delete("/blob/{blob_path:path}")
-def delete_blob(blob_path: str):
-    return get_bucket(blob_path).blob(blob_path).delete()
+def delete_blob(blob_path: str, bucket: Optional[str] = ''):
+    if not blob_path:
+        blob_path = "blobs/"
+    if not bucket:
+        bucket = GCP_BUCKET
+    blob = storage_client.bucket(bucket).blob(blob_path)
+    return blob.delete()
