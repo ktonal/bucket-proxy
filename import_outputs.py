@@ -33,9 +33,9 @@ def list_audio_blobs(bucket, dirname):
 
 
 if __name__ == '__main__':
-    SRC_BUCKET = "axx-data"
-    SRC_PREFIX = "blobs/Verdi_Dataset"
-    TRG_NAME = "trainset"
+    SRC_BUCKET = "ax6-outputs"
+    SRC_PREFIX = "sounds/raw/s2s-basic-mag"
+    TRG_NAME = "outputs"
 
     src_bucket = storage_client.bucket(SRC_BUCKET)
     # each json in the bucket is a row
@@ -56,12 +56,12 @@ if __name__ == '__main__':
                 table.setdefault(data["id"], {}).setdefault("blobs", list_audio_blobs(SRC_BUCKET, dirname))
 
     trg_bucket = storage_client.bucket("axx-data")
+    # print(table)
+    for id, data in table.items():
+        trg_bucket.blob(f"tables/{TRG_NAME}/collections/{id}.json").upload_from_string(json.dumps(data),
+                                                                                       content_type="application/json")
 
-    # for id, data in table.items():
-    #     trg_bucket.blob(f"tables/{TRG_NAME}/collections/{id}.json").upload_from_string(json.dumps(data),
-    #                                                                                    content_type="application/json")
 
-    trg_bucket.blob(f"tables/trainset/collections/")
 
 
     # trg_bucket.blob(f"tables/{TRG_NAME}/views/default.json").upload_from_string(

@@ -10,8 +10,8 @@ AUDIOS_REGEX = re.compile(r"wav$|aif$|aiff$|mp3$|mp4$|m4a$", re.IGNORECASE)
 
 
 if __name__ == '__main__':
-    files = FileWalker(r"mp3|json", "./")
-    TARGET_PREFIX = "sounds/raw/s2s-basic=mag"
+    files = FileWalker(r"mp3|json", "../ax6/trainings/s2s-basic-mag")
+    TARGET_PREFIX = "sounds/raw/s2s-basic-mag"
 
     to_upload = {f: os.path.join(TARGET_PREFIX, f.strip("./"))
                  for f in files}

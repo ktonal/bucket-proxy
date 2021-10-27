@@ -196,15 +196,24 @@ class Blob(BaseModel):
     def id(self):
         return f"{self.bucket}/{self.path}"
 
+    def __hash__(self):
+        return hash(self.id)
+
+
+class BlobsList(BaseModel):
+    blobs: List[Blob]
+
 
 @app.post("/table/{table_id}/collections/{collection_id}/blobs")
-def add_blob(table_id: str, collection_id: str, blob: Blob):
+def add_blobs(table_id: str, collection_id: str, blobs_list: BlobsList):
     storage_path = f"tables/{table_id}/collections/{collection_id}.json"
     collection = json.loads(bucket.blob(storage_path).download_as_string())
-    collection["blobs"].append(blob.dict())
+    collection["blobs"] = [Blob(**b) for b in collection["blobs"]]
+    collection["blobs"].extend(blobs_list.blobs)
+    collection["blobs"] = [blob.dict() for blob in {*collection["blobs"]}]
     bucket.blob(storage_path).upload_from_string(json.dumps(collection),
                                                  content_type="application/json")
-    return blob.dict()
+    return collection["blobs"]
 
 
 @app.put("/table/{table_id}/collections/{collection_id}/blobs")
@@ -268,7 +277,7 @@ def stream_bytes(blob_path: str, bucket: Optional[str] = ''):
     return StreamingResponse(io.BytesIO(raw), media_type=blob.content_type)
 
 
-@app.delete("/blob/{blob_path:path}")
+@app.delete("/bytes/{blob_path:path}")
 def delete_blob(blob_path: str, bucket: Optional[str] = ''):
     if not blob_path:
         blob_path = "blobs/"
