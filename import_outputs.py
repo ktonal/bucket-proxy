@@ -9,7 +9,7 @@ MAPPING = {
 }
 
 VALUES_TRANSFORMS = {
-    "files": lambda files: [*map(lambda f: os.path.split(f)[-1], files)]
+    "files": lambda files: f"Verdi_X_{os.path.split(files[0])[-1].split('_')[2]}"
 }
 
 storage_client = storage.Client("ax6-Project")
@@ -34,8 +34,8 @@ def list_audio_blobs(bucket, dirname):
 
 if __name__ == '__main__':
     SRC_BUCKET = "ax6-outputs"
-    SRC_PREFIX = "sounds/raw/s2s-basic-mag"
-    TRG_NAME = "outputs"
+    SRC_PREFIX = "sounds/raw/srnn-verdi-x"
+    TRG_NAME = "verdiX"
 
     src_bucket = storage_client.bucket(SRC_BUCKET)
     # each json in the bucket is a row
@@ -56,13 +56,14 @@ if __name__ == '__main__':
                 table.setdefault(data["id"], {}).setdefault("blobs", list_audio_blobs(SRC_BUCKET, dirname))
 
     trg_bucket = storage_client.bucket("axx-data")
+
     # print(table)
+
+    # trg_bucket.blob(f"tables/{TRG_NAME}/").upload_from_string('', content_type='application/x-www-form-urlencoded;charset=UTF-8')
+
     for id, data in table.items():
         trg_bucket.blob(f"tables/{TRG_NAME}/collections/{id}.json").upload_from_string(json.dumps(data),
                                                                                        content_type="application/json")
-
-
-
 
     # trg_bucket.blob(f"tables/{TRG_NAME}/views/default.json").upload_from_string(
     #     json.dumps([{"key": k, "visible": True, "grouped": True} for k in ["files"]] +

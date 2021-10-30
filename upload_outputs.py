@@ -1,22 +1,28 @@
 import os
+import click
+
 from h5mapper import FileWalker
-import re
 from google.cloud import storage
 
 storage_client = storage.Client("ax6-Project")
-GCP_BUCKET = os.environ.get("GCP_BUCKET", "ax6-outputs")
-bucket = storage_client.bucket(GCP_BUCKET)
-AUDIOS_REGEX = re.compile(r"wav$|aif$|aiff$|mp3$|mp4$|m4a$", re.IGNORECASE)
 
 
-if __name__ == '__main__':
-    files = FileWalker(r"mp3|json", "../ax6/trainings/s2s-basic-mag")
-    TARGET_PREFIX = "sounds/raw/s2s-basic-mag"
-
-    to_upload = {f: os.path.join(TARGET_PREFIX, f.strip("./"))
+@click.command()
+@click.option("-r", "--root", default="./", help="root to upload from")
+@click.option("-b", "--bucket", default="ax6-outputs", help="bucket to upload to")
+@click.option("-p", "--prefix", default="", help="prefix to upload to")
+def upload_outputs(root: str = "./", bucket: str = 'ax6-outputs', prefix: str = ""):
+    print(root, bucket, prefix)
+    files = FileWalker(r"mp3|json", root)
+    bucket = storage_client.bucket(bucket)
+    to_upload = {f: os.path.join("sounds/raw", prefix, f.strip("./"))
                  for f in files}
 
     for i, (src, target) in enumerate(to_upload.items()):
         # if i < 1:
         print(f"{i} -- uploading {src} to {target}")
         bucket.blob(target).upload_from_filename(src)
+
+
+if __name__ == '__main__':
+    upload_outputs()

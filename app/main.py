@@ -1,5 +1,5 @@
 import io
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import os
 import json
 from uuid import uuid4
@@ -11,7 +11,8 @@ from google.auth.transport import requests
 from fastapi import FastAPI, Depends, HTTPException, status, Header, File, UploadFile, Body
 from starlette.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+
+from app.models import View, Blob, BlobsList
 
 storage_client = storage.Client("ax6-Project")
 GCP_BUCKET = os.environ.get("GCP_BUCKET", "axx-data")
@@ -83,6 +84,8 @@ def list_tables():
 def create_table(table_id: str = Body(...)):
     view_path = f"tables/{table_id}/views/default.json"
     collections_path = f"table/{table_id}/collections"
+    # need this for the table to be listed
+    bucket.blob(f"tables/{table_id}/").upload_from_string('', content_type='application/x-www-form-urlencoded;charset=UTF-8')
     bucket.blob(view_path).upload_from_string(json.dumps(View()))
     bucket.blob(collections_path).upload_from_string('', content_type='application/x-www-form-urlencoded;charset=UTF-8')
     return "Ok"
@@ -97,19 +100,6 @@ def get_table(table_id: str, view_name: Optional[str] = "default"):
                    for coll in storage_client.list_blobs(bucket, prefix=collections_path)
                    if "json" in coll.content_type]
     return {"view": view, "collections": collections}
-
-
-# Views
-
-class Column(BaseModel):
-    key: str
-    is_visible: bool
-    is_grouped_by: bool
-
-
-class View(BaseModel):
-    name: str
-    columns: List[Column]
 
 
 @app.get("/table/{table_id}/view")
@@ -131,19 +121,6 @@ def put_view(table_id: str, view: View):
     storage_path = f"table/{table_id}/views/{view.name}.json"
     response = bucket.blob(storage_path).upload_from_string(view.json())
     return response
-
-
-# COLLECTIONS
-
-class Collection(BaseModel):
-    __root__: Dict[str, Any]
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class CollectionRequest(BaseModel):
-    collection: Collection
 
 
 @app.get("/table/{table_id}/collections")
@@ -183,25 +160,6 @@ def get_collection(table_id: str, collection_id: str):
 def delete_collection(table_id: str, collection_id: str):
     storage_path = f"tables/{table_id}/collections/{collection_id}.json"
     return bucket.blob(storage_path).delete()
-
-
-# BLOBS (in Collections)
-
-class Blob(BaseModel):
-    bucket: str
-    name: str
-    path: str
-
-    @property
-    def id(self):
-        return f"{self.bucket}/{self.path}"
-
-    def __hash__(self):
-        return hash(self.id)
-
-
-class BlobsList(BaseModel):
-    blobs: List[Blob]
 
 
 @app.post("/table/{table_id}/collections/{collection_id}/blobs")
@@ -262,7 +220,7 @@ def create_blob(
     blob = storage_client.bucket(bucket).blob(blob_path)
     # TODO: convert (.wav, .aiff, .aif, ...) to .mp3
     blob.upload_from_string(file.file.read(),
-                            content_type="audio/"+os.path.splitext(file.filename)[1].strip("."))
+                            content_type="audio/" + os.path.splitext(file.filename)[1].strip("."))
     return {"bucket": bucket, "path": blob_path, "name": file.filename}
 
 
@@ -285,3 +243,9 @@ def delete_blob(blob_path: str, bucket: Optional[str] = ''):
         bucket = GCP_BUCKET
     blob = storage_client.bucket(bucket).blob(blob_path)
     return blob.delete()
+
+
+if __name__ == '__main__':
+    route = app.routes[3]
+    print(vars(app))
+    print([(i, r.path, r.endpoint) for i, r in enumerate(app.routes)])
